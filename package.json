@@ -1,0 +1,17 @@
+{
+  "name": "gmgn-solana-monitor-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "smoke:gmgn-trending": "node --env-file=.env dist/smoke-gmgn-trending.js",
+    "smoke:telegram": "node --env-file=.env dist/smoke-telegram.js",
+    "start": "node --env-file=.env dist/main.js"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}
