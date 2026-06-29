@@ -53,6 +53,7 @@ Variables opcionales:
 yarn install
 yarn check
 yarn build
+yarn dev
 yarn smoke:telegram
 yarn smoke:gmgn-trending
 yarn start

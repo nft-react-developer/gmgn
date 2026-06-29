@@ -43,6 +43,8 @@ export class ConfigError extends Error {
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): AppConfig {
+  loadProjectEnvFile();
+
   const missingKeys = requiredKeys.filter((key) => isBlank(env[key]));
 
   if (missingKeys.length > 0) {
@@ -85,6 +87,27 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       maxInsiderRate: readNonNegativeNumber(env.MAX_INSIDER_RATE, 0.3),
     },
   };
+}
+
+function loadProjectEnvFile(): void {
+  try {
+    process.loadEnvFile?.(".env");
+  } catch (error) {
+    if (isMissingEnvFileError(error)) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+function isMissingEnvFileError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  );
 }
 
 const requiredKeys = ["GMGN_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] as const;
