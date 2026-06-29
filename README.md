@@ -35,6 +35,9 @@ Variables opcionales:
 - `TRENDING_PLATFORMS`
 - `TRENDING_ORDER_BY`
 - `TRENDING_DIRECTION`
+- `REQUIRE_LAUNCHPAD_MATCH`
+- `PUMPFUN_ADDRESS_SUFFIX_FALLBACK`
+- `PUMPFUN_ADDRESS_SUFFIX`
 - `MIN_VOLUME_USD`
 - `MIN_SWAPS`
 - `MIN_LIQUIDITY_USD`
@@ -69,6 +72,7 @@ La base del bot ya queda preparada:
 - consulta GMGN OpenAPI `GET /v1/market/rank` usando `X-APIKEY`;
 - filtra por launchpad configurable, por defecto `Pump.fun`;
 - envía alertas de fast growth por volumen, swaps, hot level, momentum y aceleración.
+- atiende comandos de Telegram solo desde `TELEGRAM_CHAT_ID`; cualquier otro chat se ignora.
 
 ## Fast growth alert
 
@@ -81,6 +85,9 @@ TRENDING_LIMIT=50
 TRENDING_PLATFORMS=Pump.fun
 TRENDING_ORDER_BY=volume
 TRENDING_DIRECTION=desc
+REQUIRE_LAUNCHPAD_MATCH=true
+PUMPFUN_ADDRESS_SUFFIX_FALLBACK=false
+PUMPFUN_ADDRESS_SUFFIX=pump
 MIN_VOLUME_USD=10000
 MIN_SWAPS=20
 MIN_LIQUIDITY_USD=10000
@@ -97,3 +104,31 @@ MAX_INSIDER_RATE=0.3
 La estrategia busca tokens con volumen fuerte, actividad real, momentum de precio,
 buy pressure y aceleración respecto del poll anterior. También aplica filtros de
 riesgo configurables para rug ratio, bundlers e insiders.
+
+`TRENDING_PLATFORMS` acepta más de un launchpad separado por coma:
+
+```env
+TRENDING_PLATFORMS=Pump.fun,letsbonk,moonshot_app
+```
+
+## Pump.fun validation
+
+La validación fuerte usa `launchpad_platform` devuelto por GMGN y lo compara contra
+`TRENDING_PLATFORMS`, por defecto `Pump.fun`.
+
+La terminación del contrato en `pump` existe como fallback opcional:
+
+```env
+PUMPFUN_ADDRESS_SUFFIX_FALLBACK=true
+```
+
+No está activada por defecto porque es una heurística, no una prueba fuerte.
+
+## Telegram commands
+
+El bot ignora en silencio cualquier comando cuyo `chat.id` no coincida exactamente
+con `TELEGRAM_CHAT_ID`.
+
+Comandos permitidos:
+
+- `/status`

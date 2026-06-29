@@ -1,6 +1,7 @@
 import type { AppConfig } from "./config.js";
 import { FastGrowthDetector, formatFastGrowthAlert } from "./fast-growth-alert.js";
 import { GmgnClient, type TrendingToken } from "./gmgn-client.js";
+import { TelegramCommandHandler } from "./telegram-command-handler.js";
 import { TelegramNotifier } from "./telegram-notifier.js";
 
 export async function startMonitor(config: AppConfig): Promise<void> {
@@ -11,10 +12,13 @@ export async function startMonitor(config: AppConfig): Promise<void> {
     config.telegram.apiBaseUrl,
   );
   const fastGrowthDetector = new FastGrowthDetector();
+  const telegramCommandHandler = new TelegramCommandHandler(telegram, config);
 
   await telegram.sendMessage(buildStartupMessage(config));
+  await telegramCommandHandler.discardPendingUpdates();
 
   await runLoop(config, async () => {
+    await telegramCommandHandler.handlePendingCommands();
     await collectMonitoringSnapshot(gmgn, telegram, fastGrowthDetector, config);
   });
 }
@@ -43,7 +47,7 @@ async function collectMonitoringSnapshot(
     limit: config.trending.limit,
     orderBy: config.trending.orderBy,
     direction: config.trending.direction,
-    platforms: config.trending.platforms,
+    launchpadPlatforms: config.trending.launchpadPlatforms,
     minVolumeUsd: config.fastGrowth.minVolumeUsd,
     minSwaps: config.fastGrowth.minSwaps,
     minLiquidityUsd: config.fastGrowth.minLiquidityUsd,
@@ -52,7 +56,8 @@ async function collectMonitoringSnapshot(
     maxInsiderRate: config.fastGrowth.maxInsiderRate,
   });
 
-  const filteredTokens = filterWatchedTokens(tokens, config.monitor.watchedTokenAddresses);
+  const sourceValidatedTokens = filterByLaunchpadSource(tokens, config);
+  const filteredTokens = filterWatchedTokens(sourceValidatedTokens, config.monitor.watchedTokenAddresses);
   const alerts = fastGrowthDetector.findAlerts(filteredTokens, config);
 
   for (const alert of alerts) {
@@ -67,8 +72,10 @@ function buildStartupMessage(config: AppConfig): string {
     "GMGN Solana monitor started.",
     `Poll interval: ${config.monitor.pollIntervalMs}ms.`,
     `Watched tokens: ${watchedCount}.`,
-    `Trending: ${config.trending.chain} ${config.trending.interval} ${config.trending.platforms.join(", ")}.`,
+    `Trending: ${config.trending.chain} ${config.trending.interval} ${config.trending.launchpadPlatforms.join(", ")}.`,
+    `Launchpad validation: ${config.trending.requireLaunchpadMatch ? "enabled" : "disabled"}.`,
     `Fast growth: min volume $${config.fastGrowth.minVolumeUsd}, min swaps ${config.fastGrowth.minSwaps}.`,
+    "Commands: /status.",
   ].join("\n");
 }
 
@@ -94,4 +101,44 @@ function filterWatchedTokens(
 
   const watched = new Set(watchedTokenAddresses.map((address) => address.toLowerCase()));
   return tokens.filter((token) => watched.has(token.address.toLowerCase()));
+}
+
+function filterByLaunchpadSource(tokens: TrendingToken[], config: AppConfig): TrendingToken[] {
+  if (!config.trending.requireLaunchpadMatch) {
+    return tokens;
+  }
+
+  const allowedPlatforms = new Set(
+    config.trending.launchpadPlatforms.map((platform) => normalizeLaunchpadPlatform(platform)),
+  );
+
+  return tokens.filter((token) => {
+    const launchpadPlatforms = normalizeLaunchpadPlatforms(token.launchpad_platform);
+
+    if (launchpadPlatforms.some((launchpad) => allowedPlatforms.has(launchpad))) {
+      return true;
+    }
+
+    if (!config.trending.addressSuffixFallback) {
+      return false;
+    }
+
+    return token.address.toLowerCase().endsWith(config.trending.fallbackAddressSuffix.toLowerCase());
+  });
+}
+
+function normalizeLaunchpadPlatforms(value: string | string[] | undefined): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  const values = Array.isArray(value) ? value : [value];
+
+  return values
+    .map((platform) => normalizeLaunchpadPlatform(platform))
+    .filter((platform) => platform.length > 0);
+}
+
+function normalizeLaunchpadPlatform(value: string): string {
+  return value.trim().toLowerCase();
 }

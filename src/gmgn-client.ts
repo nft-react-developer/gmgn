@@ -3,7 +3,7 @@ export type TrendingToken = {
   symbol?: string;
   name?: string;
   chain?: string;
-  launchpad_platform?: string;
+  launchpad_platform?: string | string[];
   exchange?: string;
   rank?: number | string;
   hot_level?: number | string;
@@ -84,7 +84,7 @@ export class GmgnClient {
     limit: number;
     orderBy: string;
     direction: string;
-    platforms: string[];
+    launchpadPlatforms: string[];
     minVolumeUsd: number;
     minSwaps: number;
     minLiquidityUsd: number;
@@ -98,7 +98,7 @@ export class GmgnClient {
       limit: String(params.limit),
       order_by: params.orderBy,
       direction: params.direction,
-      platform: params.platforms,
+      platform: params.launchpadPlatforms,
       min_volume: String(params.minVolumeUsd),
       min_swaps: String(params.minSwaps),
       min_liquidity: String(params.minLiquidityUsd),

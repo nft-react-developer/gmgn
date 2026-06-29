@@ -163,7 +163,7 @@ export function formatFastGrowthAlert(alert: FastGrowthAlert): string {
     "🚀 Fast growth alert",
     `${symbol}${name}`,
     `Address: ${address}`,
-    `Platform: ${token.launchpad_platform ?? "unknown"}`,
+    `Platform: ${formatLaunchpadPlatforms(token.launchpad_platform)}`,
     `Rank: ${token.rank ?? "n/a"} | Score: ${alert.score}`,
     `Volume: $${formatCompact(toNumber(token.volume))} | Swaps: ${toNumber(token.swaps)}`,
     `Liquidity: $${formatCompact(toNumber(token.liquidity))} | MCap: $${formatCompact(toNumber(token.market_cap))}`,
@@ -195,6 +195,14 @@ function ratio(numerator: number, denominator: number): number {
 
 function isWashTrading(value: unknown): boolean {
   return value === true || value === 1 || value === "1" || value === "true";
+}
+
+function formatLaunchpadPlatforms(value: string | string[] | undefined): string {
+  if (value === undefined) {
+    return "unknown";
+  }
+
+  return Array.isArray(value) ? value.join(", ") : value;
 }
 
 function isAboveIfPresent(value: unknown, max: number): boolean {

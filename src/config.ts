@@ -16,9 +16,12 @@ export type AppConfig = {
     chain: "sol" | "bsc" | "base" | "eth";
     interval: "1m" | "5m" | "1h" | "6h" | "24h";
     limit: number;
-    platforms: string[];
+    launchpadPlatforms: string[];
     orderBy: string;
     direction: "asc" | "desc";
+    requireLaunchpadMatch: boolean;
+    addressSuffixFallback: boolean;
+    fallbackAddressSuffix: string;
   };
   fastGrowth: {
     minVolumeUsd: number;
@@ -69,9 +72,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       chain: readEnum(env.TRENDING_CHAIN, ["sol", "bsc", "base", "eth"], "sol"),
       interval: readEnum(env.TRENDING_INTERVAL, ["1m", "5m", "1h", "6h", "24h"], "1m"),
       limit: readIntegerInRange(env.TRENDING_LIMIT, 50, 1, 100),
-      platforms: readCsv(env.TRENDING_PLATFORMS, ["Pump.fun"]),
+      launchpadPlatforms: readCsv(env.TRENDING_PLATFORMS, ["Pump.fun"]),
       orderBy: env.TRENDING_ORDER_BY?.trim() || "volume",
       direction: readEnum(env.TRENDING_DIRECTION, ["asc", "desc"], "desc"),
+      requireLaunchpadMatch: readBoolean(env.REQUIRE_LAUNCHPAD_MATCH, true),
+      addressSuffixFallback: readBoolean(env.PUMPFUN_ADDRESS_SUFFIX_FALLBACK, false),
+      fallbackAddressSuffix: env.PUMPFUN_ADDRESS_SUFFIX?.trim() || "pump",
     },
     fastGrowth: {
       minVolumeUsd: readNonNegativeNumber(env.MIN_VOLUME_USD, 10_000),
@@ -196,4 +202,22 @@ function readIntegerInRange(
   }
 
   return parsed;
+}
+
+function readBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (isBlank(value)) {
+    return fallback;
+  }
+
+  const normalized = value!.trim().toLowerCase();
+
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+    return true;
+  }
+
+  if (["0", "false", "no", "n", "off"].includes(normalized)) {
+    return false;
+  }
+
+  throw new Error(`Expected a boolean, got: ${value}`);
 }

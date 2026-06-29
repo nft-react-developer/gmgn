@@ -7,10 +7,9 @@
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/main.ts",
+    "start": "tsx watch src/main.ts",
     "smoke:gmgn-trending": "node --env-file=.env dist/smoke-gmgn-trending.js",
-    "smoke:telegram": "node --env-file=.env dist/smoke-telegram.js",
-    "start": "node --env-file=.env dist/main.js"
+    "smoke:telegram": "node --env-file=.env dist/smoke-telegram.js"
   },
   "devDependencies": {
     "tsx": "4.19.2",

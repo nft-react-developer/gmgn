@@ -11,7 +11,7 @@ async function main(): Promise<void> {
     limit: Math.min(config.trending.limit, 5),
     orderBy: config.trending.orderBy,
     direction: config.trending.direction,
-    platforms: config.trending.platforms,
+    launchpadPlatforms: config.trending.launchpadPlatforms,
     minVolumeUsd: config.fastGrowth.minVolumeUsd,
     minSwaps: config.fastGrowth.minSwaps,
     minLiquidityUsd: config.fastGrowth.minLiquidityUsd,
