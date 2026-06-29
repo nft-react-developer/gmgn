@@ -11,8 +11,10 @@
     "smoke:gmgn-trending": "node --env-file=.env dist/smoke-gmgn-trending.js",
     "smoke:telegram": "node --env-file=.env dist/smoke-telegram.js"
   },
+  "dependencies": {
+    "tsx": "4.19.2"
+  },
   "devDependencies": {
-    "tsx": "4.19.2",
     "typescript": "5.8.3"
   }
 }
