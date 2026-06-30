@@ -50,6 +50,21 @@ GMGN and Telegram HTTP calls use retry with exponential backoff and jitter for t
 - HTTP `5xx`;
 - network-level `TypeError` failures from `fetch`.
 
+## Market diagnostics
+
+Each GMGN market poll writes console diagnostics so filter tuning is observable:
+
+| Log | Purpose |
+|---|---|
+| `snapshot` | Counts tokens returned, kept by launchpad, kept by watchlist, scored, new, alerted, blocked, rejected, and cooling down. |
+| `raw GMGN sample` | Shows the first raw tokens returned by GMGN before local filters. |
+| `launchpad dropped` | Shows tokens removed by launchpad validation. |
+| `watchlist dropped` | Shows tokens removed by manual watchlist filtering when enabled. |
+| `new tokens after filters` | Shows tokens first seen by the scoring engine. |
+| `blocked by manipulation` | Shows manipulation filter failures. |
+| `rejected by thresholds` | Shows candidates that missed volume, swaps, liquidity, or minimum trader score. |
+| `top scored candidates` | Shows the strongest candidates even when they do not alert. |
+
 ## Alert model
 
 The detector requires base liquidity/activity thresholds before alerting:

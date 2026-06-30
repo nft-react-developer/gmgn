@@ -129,6 +129,21 @@ la respuesta a comandos y `POLL_INTERVAL_MS` controla el monitoreo de mercado.
 Las llamadas HTTP a GMGN y Telegram usan retry con backoff exponencial y jitter
 para errores transitorios como 408, 429 y 5xx.
 
+## Market diagnostics logs
+
+Cada poll de mercado imprime logs para entender si GMGN está devolviendo tokens
+y dónde se están filtrando:
+
+- `snapshot`: conteos por etapa (`gmgn`, `launchpad_kept`, `watchlist_kept`,
+  `scored`, `new`, `alerts`, `blocked`, `rejected`, `cooldown`);
+- `raw GMGN sample`: muestra tokens crudos devueltos por GMGN;
+- `launchpad dropped`: muestra tokens descartados por plataforma;
+- `watchlist dropped`: solo aparece si `WATCHED_TOKEN_ADDRESSES` está activo;
+- `new tokens after filters`: tokens vistos por primera vez después de filtros;
+- `blocked by manipulation`: tokens bloqueados por wash trading/rug/bundler/insiders;
+- `rejected by thresholds`: tokens que no llegaron a volumen/swaps/liquidez/score;
+- `top scored candidates`: mejores candidatos aunque no hayan disparado alerta.
+
 `TRENDING_PLATFORMS` acepta más de un launchpad separado por coma:
 
 ```env

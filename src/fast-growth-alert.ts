@@ -20,6 +20,27 @@ export type FastGrowthAlert = {
   reasons: string[];
 };
 
+export type TokenScanDiagnostic = {
+  token: TrendingToken;
+  score: number;
+  breakdown: TraderScoreBreakdown;
+  reasons: string[];
+  rejectionReasons: string[];
+  isNewToken: boolean;
+};
+
+export type FastGrowthScan = {
+  alerts: FastGrowthAlert[];
+  diagnostics: {
+    scannedTokens: number;
+    newTokens: TokenScanDiagnostic[];
+    blockedByManipulation: TokenScanDiagnostic[];
+    rejectedByThreshold: TokenScanDiagnostic[];
+    coolingDown: TokenScanDiagnostic[];
+    topCandidates: TokenScanDiagnostic[];
+  };
+};
+
 type TokenSnapshot = {
   volumeUsd: number;
   rank: number;
@@ -32,6 +53,7 @@ type TokenEvaluation = {
   score: number;
   breakdown: TraderScoreBreakdown;
   reasons: string[];
+  rejectionReasons: string[];
 };
 
 export class FastGrowthDetector {
@@ -39,7 +61,16 @@ export class FastGrowthDetector {
   private readonly lastAlertAt = new Map<string, number>();
 
   findAlerts(tokens: TrendingToken[], config: AppConfig, now = Date.now()): FastGrowthAlert[] {
+    return this.scanTokens(tokens, config, now).alerts;
+  }
+
+  scanTokens(tokens: TrendingToken[], config: AppConfig, now = Date.now()): FastGrowthScan {
     const alerts: FastGrowthAlert[] = [];
+    const newTokens: TokenScanDiagnostic[] = [];
+    const blockedByManipulation: TokenScanDiagnostic[] = [];
+    const rejectedByThreshold: TokenScanDiagnostic[] = [];
+    const coolingDown: TokenScanDiagnostic[] = [];
+    const evaluatedTokens: TokenScanDiagnostic[] = [];
 
     for (const token of tokens) {
       const address = token.address;
@@ -51,14 +82,34 @@ export class FastGrowthDetector {
       const previous = this.snapshots.get(address);
       const current = toSnapshot(token, now);
       const evaluation = evaluateToken(token, current, previous, config);
+      const diagnostic: TokenScanDiagnostic = {
+        token,
+        score: evaluation.score,
+        breakdown: evaluation.breakdown,
+        reasons: evaluation.reasons,
+        rejectionReasons: evaluation.rejectionReasons,
+        isNewToken: previous === undefined,
+      };
 
       this.snapshots.set(address, current);
+      evaluatedTokens.push(diagnostic);
+
+      if (diagnostic.isNewToken) {
+        newTokens.push(diagnostic);
+      }
 
       if (!evaluation.shouldAlert) {
+        if (evaluation.rejectionReasons.some((reason) => reason.startsWith("manipulation:"))) {
+          blockedByManipulation.push(diagnostic);
+        } else {
+          rejectedByThreshold.push(diagnostic);
+        }
+
         continue;
       }
 
       if (this.isCoolingDown(address, config.fastGrowth.alertCooldownMs, now)) {
+        coolingDown.push(diagnostic);
         continue;
       }
 
@@ -71,7 +122,17 @@ export class FastGrowthDetector {
       });
     }
 
-    return alerts.sort((left, right) => right.score - left.score);
+    return {
+      alerts: alerts.sort((left, right) => right.score - left.score),
+      diagnostics: {
+        scannedTokens: evaluatedTokens.length,
+        newTokens: newTokens.sort(byScoreDesc),
+        blockedByManipulation: blockedByManipulation.sort(byScoreDesc),
+        rejectedByThreshold: rejectedByThreshold.sort(byScoreDesc),
+        coolingDown: coolingDown.sort(byScoreDesc),
+        topCandidates: evaluatedTokens.sort(byScoreDesc).slice(0, 5),
+      },
+    };
   }
 
   private isCoolingDown(address: string, cooldownMs: number, now: number): boolean {
@@ -104,12 +165,19 @@ function evaluateToken(
     current.volumeUsd >= config.fastGrowth.minVolumeUsd &&
     toNumber(token.swaps) >= config.fastGrowth.minSwaps &&
     toNumber(token.liquidity) >= config.fastGrowth.minLiquidityUsd;
+  const rejectionReasons = getRejectionReasons(
+    manipulation.blockReasons,
+    passesBaseThreshold,
+    score,
+    config,
+  );
 
   return {
-    shouldAlert: !manipulation.blocked && passesBaseThreshold && score >= config.fastGrowth.minTraderScore,
+    shouldAlert: rejectionReasons.length === 0,
     score,
     breakdown,
     reasons,
+    rejectionReasons,
   };
 }
 
@@ -208,7 +276,7 @@ function scoreHolderRisk(token: TrendingToken, config: AppConfig): ScoreBucket {
 function scoreManipulation(
   token: TrendingToken,
   config: AppConfig,
-): { bucket: ScoreBucket; blocked: boolean } {
+): { bucket: ScoreBucket; blocked: boolean; blockReasons: string[] } {
   const blockReasons: string[] = [];
 
   if (isWashTrading(token.is_wash_trading)) {
@@ -230,6 +298,7 @@ function scoreManipulation(
   if (blockReasons.length > 0) {
     return {
       blocked: true,
+      blockReasons,
       bucket: {
         score: 0,
         reasons: blockReasons.map((reason) => `blocked: ${reason}`),
@@ -239,11 +308,37 @@ function scoreManipulation(
 
   return {
     blocked: false,
+    blockReasons,
     bucket: {
       score: 15,
       reasons: ["manipulation filters clean"],
     },
   };
+}
+
+function getRejectionReasons(
+  manipulationBlockReasons: string[],
+  passesBaseThreshold: boolean,
+  score: number,
+  config: AppConfig,
+): string[] {
+  const rejectionReasons: string[] = [];
+
+  for (const reason of manipulationBlockReasons) {
+    rejectionReasons.push(`manipulation: ${reason}`);
+  }
+
+  if (!passesBaseThreshold) {
+    rejectionReasons.push(
+      `base threshold: needs volume >= ${config.fastGrowth.minVolumeUsd}, swaps >= ${config.fastGrowth.minSwaps}, liquidity >= ${config.fastGrowth.minLiquidityUsd}`,
+    );
+  }
+
+  if (score < config.fastGrowth.minTraderScore) {
+    rejectionReasons.push(`score: ${score} < ${config.fastGrowth.minTraderScore}`);
+  }
+
+  return rejectionReasons;
 }
 
 function toSnapshot(token: TrendingToken, seenAt: number): TokenSnapshot {
@@ -370,4 +465,8 @@ function formatPercent(value: number): string {
 
 function formatRate(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
+}
+
+function byScoreDesc(left: TokenScanDiagnostic, right: TokenScanDiagnostic): number {
+  return right.score - left.score;
 }
