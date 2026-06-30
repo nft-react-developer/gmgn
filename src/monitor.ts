@@ -71,18 +71,24 @@ async function collectMonitoringSnapshot(
 }
 
 function buildStartupMessage(config: AppConfig): string {
-  const watchedCount = config.monitor.watchedTokenAddresses.length;
-
   return [
     "GMGN Solana monitor started.",
     `Poll interval: ${config.monitor.pollIntervalMs}ms.`,
     `Command poll interval: ${config.monitor.commandPollIntervalMs}ms.`,
-    `Watched tokens: ${watchedCount}.`,
+    formatWatchlistMode(config.monitor.watchedTokenAddresses),
     `Trending: ${config.trending.chain} ${config.trending.interval} ${config.trending.launchpadPlatforms.join(", ")}.`,
     `Launchpad validation: ${config.trending.requireLaunchpadMatch ? "enabled" : "disabled"}.`,
     `Fast growth: min volume $${config.fastGrowth.minVolumeUsd}, min swaps ${config.fastGrowth.minSwaps}.`,
     "Commands: /status.",
   ].join("\n");
+}
+
+function formatWatchlistMode(watchedTokenAddresses: string[]): string {
+  if (watchedTokenAddresses.length === 0) {
+    return "Watchlist: disabled; scanning GMGN trending tokens.";
+  }
+
+  return `Watchlist: ${watchedTokenAddresses.length} token${watchedTokenAddresses.length === 1 ? "" : "s"}.`;
 }
 
 function sleep(ms: number): Promise<void> {
