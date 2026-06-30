@@ -3,7 +3,7 @@ import { GmgnClient } from "./gmgn-client.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl);
+  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl, config.retry);
 
   const tokens = await gmgn.getTrendingRank({
     chain: config.trending.chain,

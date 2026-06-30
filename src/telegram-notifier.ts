@@ -1,3 +1,5 @@
+import { HttpRequestError, type RetryPolicy, withRetry } from "./retry.js";
+
 export type TelegramUpdate = {
   update_id: number;
   message?: {
@@ -19,6 +21,7 @@ export class TelegramNotifier {
     private readonly botToken: string,
     private readonly chatId: string,
     private readonly apiBaseUrl: string,
+    private readonly retryPolicy: RetryPolicy,
   ) {}
 
   async sendMessage(text: string): Promise<void> {
@@ -28,43 +31,49 @@ export class TelegramNotifier {
   async sendMessageToChat(chatId: string, text: string): Promise<void> {
     const url = new URL(`/bot${this.botToken}/sendMessage`, this.apiBaseUrl);
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        disable_web_page_preview: true,
-      }),
-    });
+    await withRetry(async () => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          disable_web_page_preview: true,
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Telegram sendMessage failed with HTTP ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new HttpRequestError("Telegram", response.status, "sendMessage");
+      }
+
+      return undefined;
+    }, this.retryPolicy);
   }
 
   async getUpdates(offset?: number): Promise<TelegramUpdate[]> {
     const url = new URL(`/bot${this.botToken}/getUpdates`, this.apiBaseUrl);
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        offset,
-        timeout: 0,
-        allowed_updates: ["message"],
-      }),
-    });
+    const body = await withRetry(async () => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          offset,
+          timeout: 0,
+          allowed_updates: ["message"],
+        }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Telegram getUpdates failed with HTTP ${response.status}`);
-    }
+      if (!response.ok) {
+        throw new HttpRequestError("Telegram", response.status, "getUpdates");
+      }
 
-    const body = (await response.json()) as TelegramApiResponse<TelegramUpdate[]>;
+      return (await response.json()) as TelegramApiResponse<TelegramUpdate[]>;
+    }, this.retryPolicy);
 
     if (!body.ok || body.result === undefined) {
       throw new Error(`Telegram getUpdates failed: ${body.description ?? "unknown error"}`);

@@ -10,7 +10,13 @@ export type AppConfig = {
   };
   monitor: {
     pollIntervalMs: number;
+    commandPollIntervalMs: number;
     watchedTokenAddresses: string[];
+  };
+  retry: {
+    maxAttempts: number;
+    baseDelayMs: number;
+    maxDelayMs: number;
   };
   trending: {
     chain: "sol" | "bsc" | "base" | "eth";
@@ -32,6 +38,11 @@ export type AppConfig = {
     minBuySellRatio: number;
     volumeGrowthMultiplier: number;
     alertCooldownMs: number;
+    minTraderScore: number;
+    minHolderCount: number;
+    maxTop10HolderRate: number;
+    minSmartDegenCount: number;
+    minRenownedCount: number;
     maxRugRatio: number;
     maxBundlerRate: number;
     maxInsiderRate: number;
@@ -66,7 +77,13 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     },
     monitor: {
       pollIntervalMs: readPositiveInteger(env.POLL_INTERVAL_MS, 30_000),
+      commandPollIntervalMs: readPositiveInteger(env.COMMAND_POLL_INTERVAL_MS, 5_000),
       watchedTokenAddresses: readCsv(env.WATCHED_TOKEN_ADDRESSES),
+    },
+    retry: {
+      maxAttempts: readIntegerInRange(env.RETRY_MAX_ATTEMPTS, 3, 1, 10),
+      baseDelayMs: readIntegerInRange(env.RETRY_BASE_DELAY_MS, 500, 0, 60_000),
+      maxDelayMs: readIntegerInRange(env.RETRY_MAX_DELAY_MS, 5_000, 0, 300_000),
     },
     trending: {
       chain: readEnum(env.TRENDING_CHAIN, ["sol", "bsc", "base", "eth"], "sol"),
@@ -88,6 +105,11 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       minBuySellRatio: readNonNegativeNumber(env.MIN_BUY_SELL_RATIO, 1.3),
       volumeGrowthMultiplier: readNonNegativeNumber(env.VOLUME_GROWTH_MULTIPLIER, 2),
       alertCooldownMs: readIntegerInRange(env.ALERT_COOLDOWN_MS, 600_000, 0, Number.MAX_SAFE_INTEGER),
+      minTraderScore: readNonNegativeNumber(env.MIN_TRADER_SCORE, 75),
+      minHolderCount: readIntegerInRange(env.MIN_HOLDER_COUNT, 50, 0, Number.MAX_SAFE_INTEGER),
+      maxTop10HolderRate: readNonNegativeNumber(env.MAX_TOP_10_HOLDER_RATE, 0.35),
+      minSmartDegenCount: readIntegerInRange(env.MIN_SMART_DEGEN_COUNT, 0, 0, Number.MAX_SAFE_INTEGER),
+      minRenownedCount: readIntegerInRange(env.MIN_RENOWNED_COUNT, 0, 0, Number.MAX_SAFE_INTEGER),
       maxRugRatio: readNonNegativeNumber(env.MAX_RUG_RATIO, 0.3),
       maxBundlerRate: readNonNegativeNumber(env.MAX_BUNDLER_RATE, 0.3),
       maxInsiderRate: readNonNegativeNumber(env.MAX_INSIDER_RATE, 0.3),

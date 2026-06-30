@@ -5,11 +5,12 @@ import { TelegramCommandHandler } from "./telegram-command-handler.js";
 import { TelegramNotifier } from "./telegram-notifier.js";
 
 export async function startMonitor(config: AppConfig): Promise<void> {
-  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl);
+  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl, config.retry);
   const telegram = new TelegramNotifier(
     config.telegram.botToken,
     config.telegram.chatId,
     config.telegram.apiBaseUrl,
+    config.retry,
   );
   const fastGrowthDetector = new FastGrowthDetector();
   const telegramCommandHandler = new TelegramCommandHandler(telegram, config);
@@ -17,21 +18,25 @@ export async function startMonitor(config: AppConfig): Promise<void> {
   await telegram.sendMessage(buildStartupMessage(config));
   await telegramCommandHandler.discardPendingUpdates();
 
-  await runLoop(config, async () => {
-    await telegramCommandHandler.handlePendingCommands();
-    await collectMonitoringSnapshot(gmgn, telegram, fastGrowthDetector, config);
-  });
+  await Promise.all([
+    runLoop("telegram commands", config.monitor.commandPollIntervalMs, async () => {
+      await telegramCommandHandler.handlePendingCommands();
+    }),
+    runLoop("gmgn market", config.monitor.pollIntervalMs, async () => {
+      await collectMonitoringSnapshot(gmgn, telegram, fastGrowthDetector, config);
+    }),
+  ]);
 }
 
-async function runLoop(config: AppConfig, task: () => Promise<void>): Promise<never> {
+async function runLoop(name: string, intervalMs: number, task: () => Promise<void>): Promise<never> {
   for (;;) {
     try {
       await task();
     } catch (error) {
-      console.error(formatRuntimeError(error));
+      console.error(formatRuntimeError(name, error));
     }
 
-    await sleep(config.monitor.pollIntervalMs);
+    await sleep(intervalMs);
   }
 }
 
@@ -71,6 +76,7 @@ function buildStartupMessage(config: AppConfig): string {
   return [
     "GMGN Solana monitor started.",
     `Poll interval: ${config.monitor.pollIntervalMs}ms.`,
+    `Command poll interval: ${config.monitor.commandPollIntervalMs}ms.`,
     `Watched tokens: ${watchedCount}.`,
     `Trending: ${config.trending.chain} ${config.trending.interval} ${config.trending.launchpadPlatforms.join(", ")}.`,
     `Launchpad validation: ${config.trending.requireLaunchpadMatch ? "enabled" : "disabled"}.`,
@@ -83,12 +89,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function formatRuntimeError(error: unknown): string {
+function formatRuntimeError(loopName: string, error: unknown): string {
   if (error instanceof Error) {
-    return `[monitor] ${error.message}`;
+    return `[monitor:${loopName}] ${error.message}`;
   }
 
-  return "[monitor] Unknown runtime error";
+  return `[monitor:${loopName}] Unknown runtime error`;
 }
 
 function filterWatchedTokens(

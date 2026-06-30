@@ -1,9 +1,22 @@
 import type { AppConfig } from "./config.js";
 import type { TrendingToken } from "./gmgn-client.js";
 
+type ScoreBucket = {
+  score: number;
+  reasons: string[];
+};
+
+export type TraderScoreBreakdown = {
+  momentum: ScoreBucket;
+  liquidity: ScoreBucket;
+  holderRisk: ScoreBucket;
+  manipulation: ScoreBucket;
+};
+
 export type FastGrowthAlert = {
   token: TrendingToken;
   score: number;
+  breakdown: TraderScoreBreakdown;
   reasons: string[];
 };
 
@@ -12,6 +25,13 @@ type TokenSnapshot = {
   rank: number;
   hotLevel: number;
   seenAt: number;
+};
+
+type TokenEvaluation = {
+  shouldAlert: boolean;
+  score: number;
+  breakdown: TraderScoreBreakdown;
+  reasons: string[];
 };
 
 export class FastGrowthDetector {
@@ -46,6 +66,7 @@ export class FastGrowthDetector {
       alerts.push({
         token,
         score: evaluation.score,
+        breakdown: evaluation.breakdown,
         reasons: evaluation.reasons,
       });
     }
@@ -64,26 +85,41 @@ function evaluateToken(
   current: TokenSnapshot,
   previous: TokenSnapshot | undefined,
   config: AppConfig,
-): { shouldAlert: boolean; score: number; reasons: string[] } {
-  const reasons: string[] = [];
-  let score = 0;
+): TokenEvaluation {
+  const manipulation = scoreManipulation(token, config);
+  const momentum = scoreMomentum(token, current, previous, config);
+  const liquidity = scoreLiquidity(token, current, config);
+  const holderRisk = scoreHolderRisk(token, config);
 
-  if (isWashTrading(token.is_wash_trading)) {
-    return { shouldAlert: false, score: 0, reasons: [] };
-  }
+  const breakdown: TraderScoreBreakdown = {
+    momentum,
+    liquidity,
+    holderRisk,
+    manipulation: manipulation.bucket,
+  };
+  const score = sumBuckets(breakdown);
+  const reasons = formatReasons(breakdown);
 
-  if (isAboveIfPresent(token.rug_ratio, config.fastGrowth.maxRugRatio)) {
-    return { shouldAlert: false, score: 0, reasons: [] };
-  }
+  const passesBaseThreshold =
+    current.volumeUsd >= config.fastGrowth.minVolumeUsd &&
+    toNumber(token.swaps) >= config.fastGrowth.minSwaps &&
+    toNumber(token.liquidity) >= config.fastGrowth.minLiquidityUsd;
 
-  if (isAboveIfPresent(token.bundler_rate, config.fastGrowth.maxBundlerRate)) {
-    return { shouldAlert: false, score: 0, reasons: [] };
-  }
+  return {
+    shouldAlert: !manipulation.blocked && passesBaseThreshold && score >= config.fastGrowth.minTraderScore,
+    score,
+    breakdown,
+    reasons,
+  };
+}
 
-  if (isAboveIfPresent(token.rat_trader_amount_rate, config.fastGrowth.maxInsiderRate)) {
-    return { shouldAlert: false, score: 0, reasons: [] };
-  }
-
+function scoreMomentum(
+  token: TrendingToken,
+  current: TokenSnapshot,
+  previous: TokenSnapshot | undefined,
+  config: AppConfig,
+): ScoreBucket {
+  const bucket: ScoreBucket = { score: 0, reasons: [] };
   const buySellRatio = ratio(toNumber(token.buys), toNumber(token.sells));
   const priceChange = Math.max(
     toNumber(token.price_change_percent),
@@ -92,29 +128,16 @@ function evaluateToken(
     toNumber(token.price_change_percent1h),
   );
 
-  if (current.volumeUsd >= config.fastGrowth.minVolumeUsd) {
-    score += 30;
-    reasons.push(`volume $${formatCompact(current.volumeUsd)}`);
-  }
-
   if (current.hotLevel >= config.fastGrowth.minHotLevel) {
-    score += 15;
-    reasons.push(`hot level ${current.hotLevel}`);
-  }
-
-  if (toNumber(token.swaps) >= config.fastGrowth.minSwaps) {
-    score += 15;
-    reasons.push(`${toNumber(token.swaps)} swaps`);
+    addScore(bucket, 15, `hot level ${current.hotLevel}`);
   }
 
   if (priceChange >= config.fastGrowth.minPriceChangePercent) {
-    score += 20;
-    reasons.push(`price +${formatPercent(priceChange)}`);
+    addScore(bucket, 20, `price +${formatPercent(priceChange)}`);
   }
 
   if (buySellRatio >= config.fastGrowth.minBuySellRatio) {
-    score += 10;
-    reasons.push(`buy/sell ${buySellRatio.toFixed(2)}x`);
+    addScore(bucket, 10, `buy/sell ${buySellRatio.toFixed(2)}x`);
   }
 
   if (previous !== undefined) {
@@ -122,25 +145,104 @@ function evaluateToken(
     const rankImproved = previous.rank - current.rank;
 
     if (volumeMultiplier >= config.fastGrowth.volumeGrowthMultiplier) {
-      score += 25;
-      reasons.push(`volume ${volumeMultiplier.toFixed(2)}x vs last poll`);
+      addScore(bucket, 25, `volume ${volumeMultiplier.toFixed(2)}x vs last poll`);
     }
 
     if (rankImproved >= 5) {
-      score += 10;
-      reasons.push(`rank improved ${rankImproved}`);
+      addScore(bucket, 10, `rank improved ${rankImproved}`);
     }
   }
 
-  const passesBaseThreshold =
-    current.volumeUsd >= config.fastGrowth.minVolumeUsd &&
-    toNumber(token.swaps) >= config.fastGrowth.minSwaps &&
-    toNumber(token.liquidity) >= config.fastGrowth.minLiquidityUsd;
+  return bucket;
+}
+
+function scoreLiquidity(token: TrendingToken, current: TokenSnapshot, config: AppConfig): ScoreBucket {
+  const bucket: ScoreBucket = { score: 0, reasons: [] };
+  const swaps = toNumber(token.swaps);
+  const liquidityUsd = toNumber(token.liquidity);
+
+  if (current.volumeUsd >= config.fastGrowth.minVolumeUsd) {
+    addScore(bucket, 25, `volume $${formatCompact(current.volumeUsd)}`);
+  }
+
+  if (swaps >= config.fastGrowth.minSwaps) {
+    addScore(bucket, 10, `${swaps} swaps`);
+  }
+
+  if (liquidityUsd >= config.fastGrowth.minLiquidityUsd) {
+    addScore(bucket, 10, `liquidity $${formatCompact(liquidityUsd)}`);
+  }
+
+  return bucket;
+}
+
+function scoreHolderRisk(token: TrendingToken, config: AppConfig): ScoreBucket {
+  const bucket: ScoreBucket = { score: 0, reasons: [] };
+  const holderCount = toNumber(token.holder_count);
+  const top10HolderRate = toNumber(token.top_10_holder_rate);
+  const smartDegenCount = toNumber(token.smart_degen_count);
+  const renownedCount = toNumber(token.renowned_count);
+
+  if (config.fastGrowth.minHolderCount > 0 && holderCount >= config.fastGrowth.minHolderCount) {
+    addScore(bucket, 8, `${holderCount} holders`);
+  }
+
+  if (isPresent(token.top_10_holder_rate) && top10HolderRate <= config.fastGrowth.maxTop10HolderRate) {
+    addScore(bucket, 8, `top 10 holders ${formatRate(top10HolderRate)}`);
+  }
+
+  if (
+    config.fastGrowth.minSmartDegenCount > 0 &&
+    smartDegenCount >= config.fastGrowth.minSmartDegenCount
+  ) {
+    addScore(bucket, 4, `${smartDegenCount} smart degens`);
+  }
+
+  if (config.fastGrowth.minRenownedCount > 0 && renownedCount >= config.fastGrowth.minRenownedCount) {
+    addScore(bucket, 4, `${renownedCount} renowned wallets`);
+  }
+
+  return bucket;
+}
+
+function scoreManipulation(
+  token: TrendingToken,
+  config: AppConfig,
+): { bucket: ScoreBucket; blocked: boolean } {
+  const blockReasons: string[] = [];
+
+  if (isWashTrading(token.is_wash_trading)) {
+    blockReasons.push("wash trading");
+  }
+
+  if (isAboveIfPresent(token.rug_ratio, config.fastGrowth.maxRugRatio)) {
+    blockReasons.push(`rug ratio > ${formatRate(config.fastGrowth.maxRugRatio)}`);
+  }
+
+  if (isAboveIfPresent(token.bundler_rate, config.fastGrowth.maxBundlerRate)) {
+    blockReasons.push(`bundler rate > ${formatRate(config.fastGrowth.maxBundlerRate)}`);
+  }
+
+  if (isAboveIfPresent(token.rat_trader_amount_rate, config.fastGrowth.maxInsiderRate)) {
+    blockReasons.push(`insider rate > ${formatRate(config.fastGrowth.maxInsiderRate)}`);
+  }
+
+  if (blockReasons.length > 0) {
+    return {
+      blocked: true,
+      bucket: {
+        score: 0,
+        reasons: blockReasons.map((reason) => `blocked: ${reason}`),
+      },
+    };
+  }
 
   return {
-    shouldAlert: passesBaseThreshold && score >= 60,
-    score,
-    reasons,
+    blocked: false,
+    bucket: {
+      score: 15,
+      reasons: ["manipulation filters clean"],
+    },
   };
 }
 
@@ -165,11 +267,49 @@ export function formatFastGrowthAlert(alert: FastGrowthAlert): string {
     `Address: ${address}`,
     `Platform: ${formatLaunchpadPlatforms(token.launchpad_platform)}`,
     `Rank: ${token.rank ?? "n/a"} | Score: ${alert.score}`,
+    formatBreakdown(alert.breakdown),
     `Volume: $${formatCompact(toNumber(token.volume))} | Swaps: ${toNumber(token.swaps)}`,
     `Liquidity: $${formatCompact(toNumber(token.liquidity))} | MCap: $${formatCompact(toNumber(token.market_cap))}`,
     `Reasons: ${alert.reasons.join(", ")}`,
     `GMGN: https://gmgn.ai/sol/token/${address}`,
   ].join("\n");
+}
+
+function addScore(bucket: ScoreBucket, score: number, reason: string): void {
+  bucket.score += score;
+  bucket.reasons.push(reason);
+}
+
+function sumBuckets(breakdown: TraderScoreBreakdown): number {
+  return (
+    breakdown.momentum.score +
+    breakdown.liquidity.score +
+    breakdown.holderRisk.score +
+    breakdown.manipulation.score
+  );
+}
+
+function formatReasons(breakdown: TraderScoreBreakdown): string[] {
+  return [
+    ...formatBucketReasons("momentum", breakdown.momentum),
+    ...formatBucketReasons("liquidity", breakdown.liquidity),
+    ...formatBucketReasons("holders/risk", breakdown.holderRisk),
+    ...formatBucketReasons("manipulation", breakdown.manipulation),
+  ];
+}
+
+function formatBucketReasons(label: string, bucket: ScoreBucket): string[] {
+  return bucket.reasons.map((reason) => `${label}: ${reason}`);
+}
+
+function formatBreakdown(breakdown: TraderScoreBreakdown): string {
+  return [
+    "Breakdown:",
+    `Momentum ${breakdown.momentum.score}`,
+    `Liquidity ${breakdown.liquidity.score}`,
+    `Holders/Risk ${breakdown.holderRisk.score}`,
+    `Manipulation ${breakdown.manipulation.score}`,
+  ].join(" | ");
 }
 
 function toNumber(value: unknown): number {
@@ -206,11 +346,15 @@ function formatLaunchpadPlatforms(value: string | string[] | undefined): string 
 }
 
 function isAboveIfPresent(value: unknown, max: number): boolean {
-  if (value === undefined || value === null || value === "") {
+  if (!isPresent(value)) {
     return false;
   }
 
   return toNumber(value) > max;
+}
+
+function isPresent(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== "";
 }
 
 function formatCompact(value: number): string {
@@ -222,4 +366,8 @@ function formatCompact(value: number): string {
 
 function formatPercent(value: number): string {
   return `${value.toFixed(2)}%`;
+}
+
+function formatRate(value: number): string {
+  return `${(value * 100).toFixed(2)}%`;
 }

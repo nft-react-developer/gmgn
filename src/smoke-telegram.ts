@@ -7,6 +7,7 @@ async function main(): Promise<void> {
     config.telegram.botToken,
     config.telegram.chatId,
     config.telegram.apiBaseUrl,
+    config.retry,
   );
 
   await notifier.sendMessage("GMGN Solana monitor Telegram smoke test OK.");

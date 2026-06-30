@@ -26,7 +26,11 @@ Variables requeridas:
 Variables opcionales:
 
 - `POLL_INTERVAL_MS`
+- `COMMAND_POLL_INTERVAL_MS`
 - `WATCHED_TOKEN_ADDRESSES`
+- `RETRY_MAX_ATTEMPTS`
+- `RETRY_BASE_DELAY_MS`
+- `RETRY_MAX_DELAY_MS`
 - `GMGN_BASE_URL`
 - `TELEGRAM_API_BASE_URL`
 - `TRENDING_CHAIN`
@@ -46,6 +50,11 @@ Variables opcionales:
 - `MIN_BUY_SELL_RATIO`
 - `VOLUME_GROWTH_MULTIPLIER`
 - `ALERT_COOLDOWN_MS`
+- `MIN_TRADER_SCORE`
+- `MIN_HOLDER_COUNT`
+- `MAX_TOP_10_HOLDER_RATE`
+- `MIN_SMART_DEGEN_COUNT`
+- `MIN_RENOWNED_COUNT`
 - `MAX_RUG_RATIO`
 - `MAX_BUNDLER_RATE`
 - `MAX_INSIDER_RATE`
@@ -85,6 +94,10 @@ TRENDING_LIMIT=50
 TRENDING_PLATFORMS=Pump.fun
 TRENDING_ORDER_BY=volume
 TRENDING_DIRECTION=desc
+COMMAND_POLL_INTERVAL_MS=5000
+RETRY_MAX_ATTEMPTS=3
+RETRY_BASE_DELAY_MS=500
+RETRY_MAX_DELAY_MS=5000
 REQUIRE_LAUNCHPAD_MATCH=true
 PUMPFUN_ADDRESS_SUFFIX_FALLBACK=false
 PUMPFUN_ADDRESS_SUFFIX=pump
@@ -96,14 +109,25 @@ MIN_HOT_LEVEL=1
 MIN_BUY_SELL_RATIO=1.3
 VOLUME_GROWTH_MULTIPLIER=2
 ALERT_COOLDOWN_MS=600000
+MIN_TRADER_SCORE=75
+MIN_HOLDER_COUNT=50
+MAX_TOP_10_HOLDER_RATE=0.35
+MIN_SMART_DEGEN_COUNT=0
+MIN_RENOWNED_COUNT=0
 MAX_RUG_RATIO=0.3
 MAX_BUNDLER_RATE=0.3
 MAX_INSIDER_RATE=0.3
 ```
 
-La estrategia busca tokens con volumen fuerte, actividad real, momentum de precio,
-buy pressure y aceleración respecto del poll anterior. También aplica filtros de
-riesgo configurables para rug ratio, bundlers e insiders.
+La estrategia separa el score trader en momentum, liquidez, holders/riesgo y
+manipulación. Busca tokens con volumen fuerte, actividad real, momentum de
+precio, buy pressure y aceleración respecto del poll anterior. También aplica
+filtros de riesgo configurables para rug ratio, bundlers e insiders.
+
+Telegram y GMGN corren en loops separados: `COMMAND_POLL_INTERVAL_MS` controla
+la respuesta a comandos y `POLL_INTERVAL_MS` controla el monitoreo de mercado.
+Las llamadas HTTP a GMGN y Telegram usan retry con backoff exponencial y jitter
+para errores transitorios como 408, 429 y 5xx.
 
 `TRENDING_PLATFORMS` acepta más de un launchpad separado por coma:
 

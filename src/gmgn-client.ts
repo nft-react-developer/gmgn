@@ -1,3 +1,5 @@
+import { HttpRequestError, type RetryPolicy, withRetry } from "./retry.js";
+
 export type TrendingToken = {
   address: string;
   symbol?: string;
@@ -46,6 +48,7 @@ export class GmgnClient {
   constructor(
     private readonly apiKey: string,
     private readonly baseUrl: string,
+    private readonly retryPolicy: RetryPolicy,
   ) {}
 
   async getJson<TResponse>(path: string, params: QueryParams = {}): Promise<TResponse> {
@@ -62,18 +65,22 @@ export class GmgnClient {
       url.searchParams.append(key, value);
     }
 
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "X-APIKEY": this.apiKey,
-      },
-    });
+    const response = await withRetry(async () => {
+      const result = await fetch(url, {
+        method: "GET",
+        headers: {
+          "accept": "application/json",
+          "content-type": "application/json",
+          "X-APIKEY": this.apiKey,
+        },
+      });
 
-    if (!response.ok) {
-      throw new Error(`GMGN request failed with HTTP ${response.status}`);
-    }
+      if (!result.ok) {
+        throw new HttpRequestError("GMGN", result.status, `GET ${path}`);
+      }
+
+      return result;
+    }, this.retryPolicy);
 
     return (await response.json()) as TResponse;
   }
