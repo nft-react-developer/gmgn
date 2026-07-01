@@ -19,7 +19,7 @@ This project is a small TypeScript service that polls GMGN trending tokens, filt
 | Component | Responsibility |
 |---|---|
 | `src/config.ts` | Loads `.env`, validates required variables, and normalizes numeric, boolean, CSV, URL, and enum settings. |
-| `src/gmgn-client.ts` | Wraps GMGN OpenAPI calls with `fetch`, API key headers, timestamp, and client ID. |
+| `src/gmgn-client.ts` | Fetches trending data through the official `gmgn-cli market trending` source by default, with an OpenAPI fallback mode for diagnostics. |
 | `src/monitor.ts` | Coordinates the polling loop, source filtering, watched-token filtering, and alert delivery. |
 | `src/fast-growth-alert.ts` | Scores token momentum using volume, swaps, liquidity, price change, buy/sell pressure, rank improvement, and risk filters. |
 | `src/telegram-notifier.ts` | Sends Telegram messages and fetches Telegram updates. |
@@ -31,7 +31,7 @@ This project is a small TypeScript service that polls GMGN trending tokens, filt
 
 | Boundary | Direction | Details |
 |---|---:|---|
-| GMGN OpenAPI | Inbound | `GET /v1/market/rank` with configurable chain, interval, order, platform, and risk filters. |
+| GMGN market source | Inbound | Default: local `./node_modules/.bin/gmgn-cli market trending --raw`. Optional diagnostic fallback: `GET /v1/market/rank`. Launchpad and risk filters run locally for observability. |
 | Telegram Bot API | Outbound | Sends startup, status, and fast-growth alert messages. |
 | Telegram Bot API | Inbound | Polls bot commands and ignores all chats except the configured chat ID. |
 | `.env` | Inbound | Runtime configuration and secrets. Secrets are not printed by the app. |
@@ -56,7 +56,7 @@ Each GMGN market poll writes console diagnostics so filter tuning is observable:
 
 | Log | Purpose |
 |---|---|
-| `snapshot` | Counts tokens returned, kept by launchpad, kept by watchlist, scored, new, alerted, blocked, rejected, and cooling down. |
+| `snapshot` | Counts tokens returned, kept by launchpad, kept by watchlist, scored, new, alerted, blocked, rejected, and cooling down. Includes `source=<cli\|openapi>` and `server_filters=off` because strong filters run locally. |
 | `raw GMGN sample` | Shows the first raw tokens returned by GMGN before local filters. |
 | `launchpad dropped` | Shows tokens removed by launchpad validation. |
 | `watchlist dropped` | Shows tokens removed by manual watchlist filtering when enabled. |

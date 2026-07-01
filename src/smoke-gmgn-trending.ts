@@ -3,7 +3,13 @@ import { GmgnClient } from "./gmgn-client.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl, config.retry);
+  const gmgn = new GmgnClient(
+    config.gmgn.apiKey,
+    config.gmgn.baseUrl,
+    config.retry,
+    config.gmgn.marketSource,
+    config.gmgn.cliCommand,
+  );
 
   const tokens = await gmgn.getTrendingRank({
     chain: config.trending.chain,
@@ -11,13 +17,6 @@ async function main(): Promise<void> {
     limit: Math.min(config.trending.limit, 5),
     orderBy: config.trending.orderBy,
     direction: config.trending.direction,
-    launchpadPlatforms: config.trending.launchpadPlatforms,
-    minVolumeUsd: config.fastGrowth.minVolumeUsd,
-    minSwaps: config.fastGrowth.minSwaps,
-    minLiquidityUsd: config.fastGrowth.minLiquidityUsd,
-    maxRugRatio: config.fastGrowth.maxRugRatio,
-    maxBundlerRate: config.fastGrowth.maxBundlerRate,
-    maxInsiderRate: config.fastGrowth.maxInsiderRate,
   });
 
   console.log(`GMGN trending smoke OK. Tokens returned: ${tokens.length}`);

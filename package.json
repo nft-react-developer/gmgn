@@ -13,6 +13,7 @@
     "smoke:telegram": "node --env-file=.env dist/smoke-telegram.js"
   },
   "dependencies": {
+    "gmgn-cli": "1.5.0",
     "tsx": "4.19.2"
   },
   "devDependencies": {

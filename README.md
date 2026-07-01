@@ -25,6 +25,8 @@ Variables requeridas:
 
 Variables opcionales:
 
+- `GMGN_MARKET_SOURCE`
+- `GMGN_CLI_COMMAND`
 - `POLL_INTERVAL_MS`
 - `COMMAND_POLL_INTERVAL_MS`
 - `WATCHED_TOKEN_ADDRESSES`
@@ -78,8 +80,9 @@ La base del bot ya queda preparada:
 - carga configuración desde `.env` en runtime;
 - valida variables requeridas sin imprimir secretos;
 - envía notificación de arranque a Telegram;
-- consulta GMGN OpenAPI `GET /v1/market/rank` usando `X-APIKEY`;
-- filtra por launchpad configurable, por defecto `Pump.fun`;
+- consulta trending con `gmgn-cli market trending` por defecto;
+- trae trending amplio desde GMGN y aplica filtros localmente para que los logs expliquen cada descarte;
+- filtra localmente por launchpad configurable, por defecto `Pump.fun`;
 - envía alertas de fast growth por volumen, swaps, hot level, momentum y aceleración.
 - atiende comandos de Telegram solo desde `TELEGRAM_CHAT_ID`; cualquier otro chat se ignora.
 
@@ -89,6 +92,8 @@ Configuración recomendada inicial:
 
 ```env
 TRENDING_CHAIN=sol
+GMGN_MARKET_SOURCE=cli
+GMGN_CLI_COMMAND=./node_modules/.bin/gmgn-cli
 TRENDING_INTERVAL=1m
 TRENDING_LIMIT=50
 TRENDING_PLATFORMS=Pump.fun
@@ -129,13 +134,21 @@ la respuesta a comandos y `POLL_INTERVAL_MS` controla el monitoreo de mercado.
 Las llamadas HTTP a GMGN y Telegram usan retry con backoff exponencial y jitter
 para errores transitorios como 408, 429 y 5xx.
 
+Por defecto el bot usa la fuente oficial `gmgn-cli market trending` porque la
+documentación actual de GMGN expone trending vía CLI. Si necesitás probar el
+endpoint antiguo, podés usar `GMGN_MARKET_SOURCE=openapi`, pero el modo
+recomendado es `cli`. La CLI se usa como dependencia local del proyecto
+(`./node_modules/.bin/gmgn-cli`), no como instalación global.
+
 ## Market diagnostics logs
 
 Cada poll de mercado imprime logs para entender si GMGN está devolviendo tokens
 y dónde se están filtrando:
 
 - `snapshot`: conteos por etapa (`gmgn`, `launchpad_kept`, `watchlist_kept`,
-  `scored`, `new`, `alerts`, `blocked`, `rejected`, `cooldown`);
+  `scored`, `new`, `alerts`, `blocked`, `rejected`, `cooldown`) e incluye
+  `source=<cli|openapi>` y `server_filters=off` porque los filtros fuertes se
+  aplican localmente;
 - `raw GMGN sample`: muestra tokens crudos devueltos por GMGN;
 - `launchpad dropped`: muestra tokens descartados por plataforma;
 - `watchlist dropped`: solo aparece si `WATCHED_TOKEN_ADDRESSES` está activo;

@@ -2,6 +2,8 @@ export type AppConfig = {
   gmgn: {
     apiKey: string;
     baseUrl: string;
+    marketSource: "cli" | "openapi";
+    cliCommand: string;
   };
   telegram: {
     botToken: string;
@@ -69,6 +71,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     gmgn: {
       apiKey: env.GMGN_API_KEY as string,
       baseUrl: readUrl(env.GMGN_BASE_URL, "https://openapi.gmgn.ai"),
+      marketSource: readEnum(env.GMGN_MARKET_SOURCE, ["cli", "openapi"], "cli"),
+      cliCommand: env.GMGN_CLI_COMMAND?.trim() || "./node_modules/.bin/gmgn-cli",
     },
     telegram: {
       botToken: env.TELEGRAM_BOT_TOKEN as string,

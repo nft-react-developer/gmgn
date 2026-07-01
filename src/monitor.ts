@@ -10,7 +10,13 @@ import { TelegramCommandHandler } from "./telegram-command-handler.js";
 import { TelegramNotifier } from "./telegram-notifier.js";
 
 export async function startMonitor(config: AppConfig): Promise<void> {
-  const gmgn = new GmgnClient(config.gmgn.apiKey, config.gmgn.baseUrl, config.retry);
+  const gmgn = new GmgnClient(
+    config.gmgn.apiKey,
+    config.gmgn.baseUrl,
+    config.retry,
+    config.gmgn.marketSource,
+    config.gmgn.cliCommand,
+  );
   const telegram = new TelegramNotifier(
     config.telegram.botToken,
     config.telegram.chatId,
@@ -57,13 +63,6 @@ async function collectMonitoringSnapshot(
     limit: config.trending.limit,
     orderBy: config.trending.orderBy,
     direction: config.trending.direction,
-    launchpadPlatforms: config.trending.launchpadPlatforms,
-    minVolumeUsd: config.fastGrowth.minVolumeUsd,
-    minSwaps: config.fastGrowth.minSwaps,
-    minLiquidityUsd: config.fastGrowth.minLiquidityUsd,
-    maxRugRatio: config.fastGrowth.maxRugRatio,
-    maxBundlerRate: config.fastGrowth.maxBundlerRate,
-    maxInsiderRate: config.fastGrowth.maxInsiderRate,
   });
 
   const sourceValidatedTokens = filterByLaunchpadSource(tokens, config);
@@ -87,6 +86,8 @@ function logMonitoringSnapshot(
   console.info(
     [
       "[monitor:gmgn market] snapshot",
+      `source=${config.gmgn.marketSource}`,
+      "server_filters=off",
       `gmgn=${gmgnTokens.length}`,
       `launchpad_kept=${sourceValidatedTokens.length}`,
       `watchlist_kept=${filteredTokens.length}`,
