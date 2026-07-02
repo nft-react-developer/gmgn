@@ -244,15 +244,15 @@ function scoreLiquidity(token: TrendingToken, current: TokenSnapshot, config: Ap
   const swaps = toNumber(token.swaps);
   const liquidityUsd = toNumber(token.liquidity);
 
-  if (current.volumeUsd >= config.fastGrowth.minVolumeUsd) {
+  if (config.fastGrowth.minVolumeUsd > 0 && current.volumeUsd >= config.fastGrowth.minVolumeUsd) {
     addScore(bucket, 25, `volume $${formatCompact(current.volumeUsd)}`);
   }
 
-  if (swaps >= config.fastGrowth.minSwaps) {
+  if (config.fastGrowth.minSwaps > 0 && swaps >= config.fastGrowth.minSwaps) {
     addScore(bucket, 10, `${swaps} swaps`);
   }
 
-  if (liquidityUsd >= config.fastGrowth.minLiquidityUsd) {
+  if (config.fastGrowth.minLiquidityUsd > 0 && liquidityUsd >= config.fastGrowth.minLiquidityUsd) {
     addScore(bucket, 10, `liquidity $${formatCompact(liquidityUsd)}`);
   }
 

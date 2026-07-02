@@ -112,7 +112,7 @@ export class GmgnClient {
     return this.getTrendingRankFromOpenApi(params);
   }
 
-  async getTokenProfile(chain: string, address: string): Promise<TrendingToken> {
+  async getTokenProfile(chain: string, address: string, interval = "1m"): Promise<TrendingToken> {
     const [infoResult, securityResult] = await Promise.allSettled([
       this.getOpenApiData<unknown>("/v1/token/info", { chain, address }),
       this.getOpenApiData<unknown>("/v1/token/security", { chain, address }),
@@ -124,12 +124,11 @@ export class GmgnClient {
       );
     }
 
-    const info = infoResult.status === "fulfilled" ? normalizeTokenLike(infoResult.value, address) : {};
-    const security = securityResult.status === "fulfilled" ? normalizeTokenLike(securityResult.value, address) : {};
+    const info = infoResult.status === "fulfilled" ? normalizeTokenLike(infoResult.value, address, interval) : {};
+    const security = securityResult.status === "fulfilled" ? normalizeTokenLike(securityResult.value, address, interval) : {};
 
     return {
-      ...info,
-      ...security,
+      ...mergeDefined(info, security),
       address,
       chain,
     };
@@ -249,11 +248,11 @@ function normalizeTrendingToken(value: unknown): TrendingToken[] {
   return normalizeTrendingTokenLike(value);
 }
 
-function normalizeTokenLike(value: unknown, fallbackAddress: string): TrendingToken {
-  return normalizeTrendingTokenLike(value, fallbackAddress)[0] ?? { address: fallbackAddress };
+function normalizeTokenLike(value: unknown, fallbackAddress: string, interval: string): TrendingToken {
+  return normalizeTrendingTokenLike(value, fallbackAddress, interval)[0] ?? { address: fallbackAddress };
 }
 
-function normalizeTrendingTokenLike(value: unknown, fallbackAddress?: string): TrendingToken[] {
+function normalizeTrendingTokenLike(value: unknown, fallbackAddress?: string, interval?: string): TrendingToken[] {
   if (!isRecord(value)) {
     return [];
   }
@@ -263,8 +262,16 @@ function normalizeTrendingTokenLike(value: unknown, fallbackAddress?: string): T
       ...value.token,
       ...value,
       token: undefined,
-    }, fallbackAddress);
+    }, fallbackAddress, interval);
   }
+
+  const price = readRecord(value.price);
+  const pool = readRecord(value.pool);
+  const stat = readRecord(value.stat);
+  const dev = readRecord(value.dev);
+  const walletTagsStat = readRecord(value.wallet_tags_stat);
+  const selectedInterval = interval ?? "1m";
+  const currentPrice = readMetric(price, "price") ?? value.price;
 
   const address = readString(value.address) ??
     readString(value.token_address) ??
@@ -279,17 +286,33 @@ function normalizeTrendingTokenLike(value: unknown, fallbackAddress?: string): T
   return [{
     ...value,
     address,
-    market_cap: value.market_cap ?? value.marketcap,
-    volume: value.volume ?? value.volume_24h ?? value.volume_1h ?? value.volume1h,
+    price: currentPrice,
+    market_cap: readFirstMetric(value, [
+      "market_cap",
+      "marketcap",
+      "usd_market_cap",
+      "fdv",
+      "mcap",
+    ]) ?? calculateMarketCap(currentPrice, value.circulating_supply ?? value.total_supply),
+    liquidity: readFirstMetric(value, ["liquidity", "liquidity_usd", "liquidityUsd"]) ?? readMetric(pool, "liquidity"),
+    volume: readIntervalMetric(value, price, "volume", selectedInterval),
+    swaps: readIntervalMetric(value, price, "swaps", selectedInterval),
+    buys: readIntervalMetric(value, price, "buys", selectedInterval),
+    sells: readIntervalMetric(value, price, "sells", selectedInterval),
+    hot_level: value.hot_level ?? readMetric(price, "hot_level"),
     launchpad_platform: value.launchpad_platform ?? value.platform,
-    price_change_percent: value.price_change_percent ?? value.change,
-    price_change_percent1m: value.price_change_percent1m ?? value.change1m,
-    price_change_percent5m: value.price_change_percent5m ?? value.change5m,
-    price_change_percent1h: value.price_change_percent1h ?? value.change1h,
-    holder_count: value.holder_count ?? value.holders,
-    rat_trader_amount_rate: value.rat_trader_amount_rate ?? value.insider_rate,
-    bundler_rate: value.bundler_rate ?? value.bundler_trader_amount_rate,
-    top_10_holder_rate: value.top_10_holder_rate ?? value.top10_holder_rate,
+    price_change_percent: value.price_change_percent ??
+      value.change ??
+      calculatePriceChange(currentPrice, readMetric(price, `price_${selectedInterval}`)),
+    price_change_percent1m: value.price_change_percent1m ?? value.change1m ?? calculatePriceChange(currentPrice, readMetric(price, "price_1m")),
+    price_change_percent5m: value.price_change_percent5m ?? value.change5m ?? calculatePriceChange(currentPrice, readMetric(price, "price_5m")),
+    price_change_percent1h: value.price_change_percent1h ?? value.change1h ?? calculatePriceChange(currentPrice, readMetric(price, "price_1h")),
+    holder_count: value.holder_count ?? value.holders ?? readMetric(stat, "holder_count"),
+    rat_trader_amount_rate: value.rat_trader_amount_rate ?? value.insider_rate ?? readMetric(stat, "top_rat_trader_percentage"),
+    bundler_rate: value.bundler_rate ?? value.bundler_trader_amount_rate ?? readMetric(stat, "top_bundler_trader_percentage"),
+    top_10_holder_rate: value.top_10_holder_rate ?? value.top10_holder_rate ?? readMetric(stat, "top_10_holder_rate") ?? readMetric(dev, "top_10_holder_rate"),
+    smart_degen_count: value.smart_degen_count ?? readMetric(walletTagsStat, "smart_wallets"),
+    renowned_count: value.renowned_count ?? readMetric(walletTagsStat, "renowned_wallets"),
   } as TrendingToken];
 }
 
@@ -299,6 +322,99 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
+
+function readMetric(record: Record<string, unknown> | undefined, key: string): unknown {
+  return record?.[key];
+}
+
+function readFirstMetric(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = record[key];
+
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function readIntervalMetric(
+  flat: Record<string, unknown>,
+  nested: Record<string, unknown> | undefined,
+  base: "volume" | "swaps" | "buys" | "sells",
+  interval: string,
+): unknown {
+  return readFirstMetric(flat, intervalMetricKeys(base, interval)) ??
+    readFirstMetric(nested ?? {}, intervalMetricKeys(base, interval));
+}
+
+function intervalMetricKeys(base: "volume" | "swaps" | "buys" | "sells", interval: string): string[] {
+  return [
+    `${base}_${interval}`,
+    `${base}${interval}`,
+    `${base}_usd_${interval}`,
+    `${base}Usd${interval}`,
+    base,
+    `${base}_24h`,
+    `${base}24h`,
+    `${base}_1h`,
+    `${base}1h`,
+  ];
+}
+
+function calculateMarketCap(price: unknown, supply: unknown): number | undefined {
+  const numericPrice = toNumber(price);
+  const numericSupply = toNumber(supply);
+
+  if (numericPrice === undefined || numericSupply === undefined) {
+    return undefined;
+  }
+
+  return numericPrice * numericSupply;
+}
+
+function calculatePriceChange(currentPrice: unknown, previousPrice: unknown): number | undefined {
+  const current = toNumber(currentPrice);
+  const previous = toNumber(previousPrice);
+
+  if (current === undefined || previous === undefined || previous <= 0) {
+    return undefined;
+  }
+
+  return ((current - previous) / previous) * 100;
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+function mergeDefined(...records: Array<Record<string, unknown>>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  for (const record of records) {
+    for (const [key, value] of Object.entries(record)) {
+      if (value !== undefined) {
+        result[key] = value;
+      }
+    }
+  }
+
+  return result;
 }
 
 function describeResponseShape(value: unknown): string {

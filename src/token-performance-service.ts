@@ -61,7 +61,7 @@ export class TokenPerformanceService {
 
   private async buildAnalysis(address: string, source: AnalysisSource): Promise<StoredAnalysis> {
     const now = new Date();
-    const token = await this.gmgn.getTokenProfile(this.config.trending.chain, address);
+    const token = await this.gmgn.getTokenProfile(this.config.trending.chain, address, this.config.trending.interval);
     const previous = await this.store.getPreviousSnapshot(address);
     const diagnostic = analyzeFastGrowthToken(token, this.config, previous, now.getTime());
     const snapshot = snapshotTrendingToken(token, now.getTime());
