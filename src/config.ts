@@ -15,6 +15,10 @@ export type AppConfig = {
     commandPollIntervalMs: number;
     watchedTokenAddresses: string[];
   };
+  analytics: {
+    storePath: string;
+    defaultTrackHours: number;
+  };
   retry: {
     maxAttempts: number;
     baseDelayMs: number;
@@ -83,6 +87,10 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       pollIntervalMs: readPositiveInteger(env.POLL_INTERVAL_MS, 30_000),
       commandPollIntervalMs: readPositiveInteger(env.COMMAND_POLL_INTERVAL_MS, 5_000),
       watchedTokenAddresses: readCsv(env.WATCHED_TOKEN_ADDRESSES),
+    },
+    analytics: {
+      storePath: env.TOKEN_ANALYTICS_STORE_PATH?.trim() || "data/token-performance.json",
+      defaultTrackHours: readPositiveInteger(env.DEFAULT_TRACK_HOURS, 6),
     },
     retry: {
       maxAttempts: readIntegerInRange(env.RETRY_MAX_ATTEMPTS, 3, 1, 10),

@@ -6,8 +6,10 @@ import {
   formatFastGrowthAlert,
 } from "./fast-growth-alert.js";
 import { GmgnClient, type TrendingToken } from "./gmgn-client.js";
-import { TelegramCommandHandler } from "./telegram-command-handler.js";
+import { TELEGRAM_BOT_COMMANDS, TelegramCommandHandler } from "./telegram-command-handler.js";
 import { TelegramNotifier } from "./telegram-notifier.js";
+import { TokenPerformanceService } from "./token-performance-service.js";
+import { TokenPerformanceStore } from "./token-performance-store.js";
 
 export async function startMonitor(config: AppConfig): Promise<void> {
   const gmgn = new GmgnClient(
@@ -24,8 +26,14 @@ export async function startMonitor(config: AppConfig): Promise<void> {
     config.retry,
   );
   const fastGrowthDetector = new FastGrowthDetector();
-  const telegramCommandHandler = new TelegramCommandHandler(telegram, config);
+  const tokenPerformance = new TokenPerformanceService(
+    gmgn,
+    config,
+    new TokenPerformanceStore(config.analytics.storePath),
+  );
+  const telegramCommandHandler = new TelegramCommandHandler(telegram, config, tokenPerformance);
 
+  await registerTelegramCommands(telegram);
   await telegram.sendMessage(buildStartupMessage(config));
   await telegramCommandHandler.discardPendingUpdates();
 
@@ -34,9 +42,17 @@ export async function startMonitor(config: AppConfig): Promise<void> {
       await telegramCommandHandler.handlePendingCommands();
     }),
     runLoop("gmgn market", config.monitor.pollIntervalMs, async () => {
-      await collectMonitoringSnapshot(gmgn, telegram, fastGrowthDetector, config);
+      await collectMonitoringSnapshot(gmgn, telegram, fastGrowthDetector, tokenPerformance, config);
     }),
   ]);
+}
+
+async function registerTelegramCommands(telegram: TelegramNotifier): Promise<void> {
+  try {
+    await telegram.setMyCommands(TELEGRAM_BOT_COMMANDS);
+  } catch (error) {
+    console.warn(formatRuntimeError("telegram commands setup", error));
+  }
 }
 
 async function runLoop(name: string, intervalMs: number, task: () => Promise<void>): Promise<never> {
@@ -55,6 +71,7 @@ async function collectMonitoringSnapshot(
   gmgn: GmgnClient,
   telegram: TelegramNotifier,
   fastGrowthDetector: FastGrowthDetector,
+  tokenPerformance: TokenPerformanceService,
   config: AppConfig,
 ): Promise<void> {
   const tokens = await gmgn.getTrendingRank({
@@ -73,6 +90,13 @@ async function collectMonitoringSnapshot(
 
   for (const alert of scan.alerts) {
     await telegram.sendMessage(formatFastGrowthAlert(alert));
+  }
+
+  const trackedRefresh = await tokenPerformance.refreshTrackedTokens();
+  if (trackedRefresh.refreshed > 0 || trackedRefresh.failed > 0) {
+    console.info(
+      `[monitor:token performance] refreshed=${trackedRefresh.refreshed} failed=${trackedRefresh.failed}`,
+    );
   }
 }
 
@@ -192,7 +216,8 @@ function buildStartupMessage(config: AppConfig): string {
     `Trending: ${config.trending.chain} ${config.trending.interval} ${config.trending.launchpadPlatforms.join(", ")}.`,
     `Launchpad validation: ${config.trending.requireLaunchpadMatch ? "enabled" : "disabled"}.`,
     `Fast growth: min volume $${config.fastGrowth.minVolumeUsd}, min swaps ${config.fastGrowth.minSwaps}.`,
-    "Commands: /status.",
+    `Token analytics store: ${config.analytics.storePath}.`,
+    "Commands: /status, /analyze, /track, /missed, /label, /review.",
   ].join("\n");
 }
 

@@ -112,6 +112,29 @@ export class GmgnClient {
     return this.getTrendingRankFromOpenApi(params);
   }
 
+  async getTokenProfile(chain: string, address: string): Promise<TrendingToken> {
+    const [infoResult, securityResult] = await Promise.allSettled([
+      this.getOpenApiData<unknown>("/v1/token/info", { chain, address }),
+      this.getOpenApiData<unknown>("/v1/token/security", { chain, address }),
+    ]);
+
+    if (infoResult.status === "rejected" && securityResult.status === "rejected") {
+      throw new Error(
+        `GMGN token profile failed: ${formatErrorMessage(infoResult.reason)}; ${formatErrorMessage(securityResult.reason)}`,
+      );
+    }
+
+    const info = infoResult.status === "fulfilled" ? normalizeTokenLike(infoResult.value, address) : {};
+    const security = securityResult.status === "fulfilled" ? normalizeTokenLike(securityResult.value, address) : {};
+
+    return {
+      ...info,
+      ...security,
+      address,
+      chain,
+    };
+  }
+
   private async getTrendingRankFromOpenApi(params: {
     chain: string;
     interval: string;
@@ -223,22 +246,31 @@ function extractTrendingTokens(value: unknown): TrendingToken[] {
 }
 
 function normalizeTrendingToken(value: unknown): TrendingToken[] {
+  return normalizeTrendingTokenLike(value);
+}
+
+function normalizeTokenLike(value: unknown, fallbackAddress: string): TrendingToken {
+  return normalizeTrendingTokenLike(value, fallbackAddress)[0] ?? { address: fallbackAddress };
+}
+
+function normalizeTrendingTokenLike(value: unknown, fallbackAddress?: string): TrendingToken[] {
   if (!isRecord(value)) {
     return [];
   }
 
   if (isRecord(value.token)) {
-    return normalizeTrendingToken({
+    return normalizeTrendingTokenLike({
       ...value.token,
       ...value,
       token: undefined,
-    });
+    }, fallbackAddress);
   }
 
   const address = readString(value.address) ??
     readString(value.token_address) ??
     readString(value.contract_address) ??
-    readString(value.ca);
+    readString(value.ca) ??
+    fallbackAddress;
 
   if (address === undefined || address.length === 0) {
     return [];
@@ -248,8 +280,12 @@ function normalizeTrendingToken(value: unknown): TrendingToken[] {
     ...value,
     address,
     market_cap: value.market_cap ?? value.marketcap,
+    volume: value.volume ?? value.volume_24h ?? value.volume_1h ?? value.volume1h,
     launchpad_platform: value.launchpad_platform ?? value.platform,
     price_change_percent: value.price_change_percent ?? value.change,
+    price_change_percent1m: value.price_change_percent1m ?? value.change1m,
+    price_change_percent5m: value.price_change_percent5m ?? value.change5m,
+    price_change_percent1h: value.price_change_percent1h ?? value.change1h,
     holder_count: value.holder_count ?? value.holders,
     rat_trader_amount_rate: value.rat_trader_amount_rate ?? value.insider_rate,
     bundler_rate: value.bundler_rate ?? value.bundler_trader_amount_rate,
@@ -291,6 +327,10 @@ function formatCliError(error: unknown, cliCommand: string): string {
   }
 
   return "GMGN CLI trending failed with an unknown error";
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }
 
 function isNodeError(error: unknown): error is Error & { code?: string } {

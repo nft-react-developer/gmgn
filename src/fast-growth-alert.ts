@@ -41,7 +41,7 @@ export type FastGrowthScan = {
   };
 };
 
-type TokenSnapshot = {
+export type TokenSnapshot = {
   volumeUsd: number;
   rank: number;
   hotLevel: number;
@@ -81,15 +81,7 @@ export class FastGrowthDetector {
 
       const previous = this.snapshots.get(address);
       const current = toSnapshot(token, now);
-      const evaluation = evaluateToken(token, current, previous, config);
-      const diagnostic: TokenScanDiagnostic = {
-        token,
-        score: evaluation.score,
-        breakdown: evaluation.breakdown,
-        reasons: evaluation.reasons,
-        rejectionReasons: evaluation.rejectionReasons,
-        isNewToken: previous === undefined,
-      };
+      const diagnostic = analyzeFastGrowthToken(token, config, previous, now);
 
       this.snapshots.set(address, current);
       evaluatedTokens.push(diagnostic);
@@ -98,8 +90,8 @@ export class FastGrowthDetector {
         newTokens.push(diagnostic);
       }
 
-      if (!evaluation.shouldAlert) {
-        if (evaluation.rejectionReasons.some((reason) => reason.startsWith("manipulation:"))) {
+      if (diagnostic.rejectionReasons.length > 0) {
+        if (diagnostic.rejectionReasons.some((reason) => reason.startsWith("manipulation:"))) {
           blockedByManipulation.push(diagnostic);
         } else {
           rejectedByThreshold.push(diagnostic);
@@ -116,9 +108,9 @@ export class FastGrowthDetector {
       this.lastAlertAt.set(address, now);
       alerts.push({
         token,
-        score: evaluation.score,
-        breakdown: evaluation.breakdown,
-        reasons: evaluation.reasons,
+        score: diagnostic.score,
+        breakdown: diagnostic.breakdown,
+        reasons: diagnostic.reasons,
       });
     }
 
@@ -139,6 +131,29 @@ export class FastGrowthDetector {
     const lastAlertAt = this.lastAlertAt.get(address);
     return lastAlertAt !== undefined && now - lastAlertAt < cooldownMs;
   }
+}
+
+export function analyzeFastGrowthToken(
+  token: TrendingToken,
+  config: AppConfig,
+  previous: TokenSnapshot | undefined,
+  now = Date.now(),
+): TokenScanDiagnostic {
+  const current = toSnapshot(token, now);
+  const evaluation = evaluateToken(token, current, previous, config);
+
+  return {
+    token,
+    score: evaluation.score,
+    breakdown: evaluation.breakdown,
+    reasons: evaluation.reasons,
+    rejectionReasons: evaluation.rejectionReasons,
+    isNewToken: previous === undefined,
+  };
+}
+
+export function snapshotTrendingToken(token: TrendingToken, seenAt = Date.now()): TokenSnapshot {
+  return toSnapshot(token, seenAt);
 }
 
 function evaluateToken(

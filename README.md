@@ -100,6 +100,8 @@ TRENDING_PLATFORMS=Pump.fun
 TRENDING_ORDER_BY=volume
 TRENDING_DIRECTION=desc
 COMMAND_POLL_INTERVAL_MS=5000
+TOKEN_ANALYTICS_STORE_PATH=data/token-performance.json
+DEFAULT_TRACK_HOURS=6
 RETRY_MAX_ATTEMPTS=3
 RETRY_BASE_DELAY_MS=500
 RETRY_MAX_DELAY_MS=5000
@@ -184,3 +186,19 @@ con `TELEGRAM_CHAT_ID`.
 Comandos permitidos:
 
 - `/status`
+- `/analyze <token-address>`: consulta GMGN para ese token, calcula el score actual
+  y explica si habría disparado alerta o qué filtro lo bloqueó.
+- `/track <token-address> [hours]`: guarda snapshots periódicos del token durante
+  la ventana indicada; por defecto usa `DEFAULT_TRACK_HOURS`.
+- `/missed <token-address>`: marca un falso negativo manual y guarda el análisis
+  para revisar qué filtro dejó afuera una oportunidad.
+- `/label <token-address> good|bad|noise`: etiqueta el token después de revisarlo.
+- `/review`: resume tokens trackeados, falsos negativos, etiquetas y motivos de
+  rechazo más frecuentes.
+
+Los datos de aprendizaje se guardan en JSON local, por defecto en
+`data/token-performance.json`. Ese directorio está ignorado por git porque contiene
+datos runtime, no configuración del proyecto.
+
+Al arrancar, el bot registra estos comandos con Telegram `setMyCommands`, así
+Telegram los sugiere al escribir `/`.

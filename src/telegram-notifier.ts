@@ -10,6 +10,11 @@ export type TelegramUpdate = {
   };
 };
 
+export type TelegramBotCommand = {
+  command: string;
+  description: string;
+};
+
 type TelegramApiResponse<TResult> = {
   ok: boolean;
   result?: TResult;
@@ -26,6 +31,34 @@ export class TelegramNotifier {
 
   async sendMessage(text: string): Promise<void> {
     await this.sendMessageToChat(this.chatId, text);
+  }
+
+  async setMyCommands(commands: TelegramBotCommand[]): Promise<void> {
+    const url = new URL(`/bot${this.botToken}/setMyCommands`, this.apiBaseUrl);
+
+    await withRetry(async () => {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          commands,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new HttpRequestError("Telegram", response.status, "setMyCommands");
+      }
+
+      const body = (await response.json()) as TelegramApiResponse<boolean>;
+
+      if (!body.ok) {
+        throw new Error(`Telegram setMyCommands failed: ${body.description ?? "unknown error"}`);
+      }
+
+      return undefined;
+    }, this.retryPolicy);
   }
 
   async sendMessageToChat(chatId: string, text: string): Promise<void> {
